@@ -1,4 +1,12 @@
 #include "systemcalls.h"
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -17,7 +25,7 @@ bool do_system(const char *cmd)
  *   or false() if it returned a failure
 */
 
-    return true;
+  return system(cmd) == 0;
 }
 
 /**
@@ -49,6 +57,8 @@ bool do_exec(int count, ...)
     // and may be removed
     command[count] = command[count];
 
+    va_end(args);
+    
 /*
  * TODO:
  *   Execute a system command by calling fork, execv(),
@@ -58,8 +68,21 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
-
-    va_end(args);
+    pid_t pid = fork();
+    if (pid == -1) {
+      return false;
+    } else if (pid == 0) {
+      int rc = execv(command[0], command);
+      if (rc == -1)
+	exit(1);
+      return true;
+    } else {
+      int rc;
+      if (wait(&rc) == -1) {
+	return false;
+      }
+      return WEXITSTATUS(rc) == 0;
+    }
 
     return true;
 }
@@ -84,6 +107,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     // and may be removed
     command[count] = command[count];
 
+    va_end(args);
 
 /*
  * TODO
@@ -93,7 +117,32 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *
 */
 
-    va_end(args);
+    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+    if (fd == -1) {
+      return false;
+    }
+
+    pid_t pid = fork();
+    if (pid == -1) {
+      close(fd);
+      return false;
+    } else if (pid == 0) {
+      if (dup2(fd, 1) == -1) {
+	return false;
+      }
+      close(fd);
+      int rc = execv(command[0], command);
+      if (rc == -1)
+	exit(1);
+      return true;
+    } else {
+      close(fd);
+      int rc;
+      if (wait(&rc) == -1) {
+	return false;
+      }
+      return WEXITSTATUS(rc) == 0;
+    }
 
     return true;
 }
